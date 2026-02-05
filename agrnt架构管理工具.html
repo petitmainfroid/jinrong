@@ -1,0 +1,1667 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LangGraph Agent 工作流设计器</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f6fa;
+            overflow: hidden;
+            height: 100vh;
+        }
+        
+        .container {
+            display: flex;
+            height: 100vh;
+            flex-direction: column;
+        }
+        
+        /* 顶部导航栏 */
+        .header {
+            height: 50px;
+            background: #2c3e50;
+            color: white;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            justify-content: space-between;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+        }
+        
+        .breadcrumb-item {
+            cursor: pointer;
+            padding: 4px 12px;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        
+        .breadcrumb-item:hover {
+            background: rgba(255,255,255,0.1);
+        }
+        
+        .breadcrumb-item.active {
+            font-weight: bold;
+            color: #3498db;
+        }
+        
+        .breadcrumb-separator {
+            color: #7f8c8d;
+        }
+        
+        /* 主体布局 */
+        .main {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+        
+        /* 左侧工具栏 */
+        .toolbar {
+            width: 260px;
+            background: white;
+            border-right: 1px solid #ddd;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .tool-section h3 {
+            font-size: 12px;
+            color: #7f8c8d;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        .tool-btn {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 8px;
+            border: 2px solid transparent;
+            background: #ecf0f1;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.2s;
+            font-size: 13px;
+        }
+        
+        .tool-btn:hover {
+            background: #e0e6ed;
+            transform: translateX(3px);
+        }
+        
+        .tool-btn.active {
+            border-color: #3498db;
+            background: #ebf5fb;
+        }
+        
+        .tool-icon {
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .action-btn {
+            background: #27ae60;
+            color: white;
+            border: none;
+        }
+        
+        .action-btn:hover { background: #229954; }
+        
+        .danger-btn {
+            background: #e74c3c;
+            color: white;
+            border: none;
+        }
+        
+        .danger-btn:hover { background: #c0392b; }
+        
+        /* 画布区域 */
+        .canvas-wrapper {
+            flex: 1;
+            position: relative;
+            background: #f8f9fa;
+            overflow: hidden;
+        }
+        
+        #canvas {
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+        }
+        
+        .canvas-hint {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 10;
+        }
+        
+        .canvas-hint.show { opacity: 1; }
+        
+        /* 右侧面板 */
+        .properties {
+            width: 320px;
+            background: white;
+            border-left: 1px solid #ddd;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        .properties h3 {
+            margin-bottom: 20px;
+            color: #2c3e50;
+            font-size: 16px;
+        }
+        
+        .prop-group {
+            margin-bottom: 20px;
+        }
+        
+        .prop-group label {
+            display: block;
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+        
+        .prop-group input,
+        .prop-group select,
+        .prop-group textarea {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        
+        .prop-group textarea {
+            min-height: 80px;
+            resize: vertical;
+            font-family: monospace;
+        }
+        
+        .prop-group small {
+            color: #95a5a6;
+            font-size: 11px;
+            margin-top: 4px;
+            display: block;
+        }
+        
+        .tag-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 5px;
+        }
+        
+        .tag {
+            background: #3498db;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .tag button {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+        }
+        
+        /* 模态框 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal.show { display: flex; }
+        
+        .modal-content {
+            background: white;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 1000px;
+            max-height: 90vh;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .modal-header {
+            padding: 20px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-body {
+            flex: 1;
+            overflow: auto;
+            padding: 20px;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #eee;
+        }
+        
+        .tab {
+            padding: 10px 20px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-weight: 600;
+            color: #7f8c8d;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+        }
+        
+        .tab.active {
+            color: #3498db;
+            border-bottom-color: #3498db;
+        }
+        
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        .code-block {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 20px;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+        
+        .code-block pre {
+            margin: 0;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+        
+        .download-btn {
+            background: #2980b9;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            font-size: 13px;
+        }
+        
+        .download-btn:hover { background: #3498db; }
+        
+        /* 子图入口提示 */
+        .subgraph-hint {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(155, 89, 182, 0.9);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 6px;
+            font-size: 13px;
+            display: none;
+        }
+        
+        .subgraph-hint.show { display: block; }
+        
+        /* 帮助面板 */
+        .help-panel {
+            background: #ecf0f1;
+            padding: 15px;
+            border-radius: 6px;
+            font-size: 12px;
+            line-height: 1.6;
+            color: #555;
+        }
+        
+        .help-panel h4 {
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+        
+        .node-legend {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 5px 0;
+        }
+        
+        .legend-shape {
+            width: 20px;
+            height: 20px;
+            border: 2px solid;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 顶部导航 -->
+        <div class="header">
+            <div class="breadcrumb" id="breadcrumb">
+                <span class="breadcrumb-item active" onclick="navigateToRoot()">主工作流</span>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button class="download-btn" onclick="generateCode()">生成代码</button>
+                <button class="download-btn" onclick="exportGraph()" style="background: #8e44ad;">导出</button>
+                <input type="file" id="import-file" style="display: none;" onchange="importGraph(event)">
+                <button class="download-btn" onclick="document.getElementById('import-file').click()" style="background: #16a085;">导入</button>
+            </div>
+        </div>
+        
+        <!-- 主体 -->
+        <div class="main">
+            <!-- 左侧工具栏 -->
+            <div class="toolbar">
+                <div class="tool-section">
+                    <h3>基础节点</h3>
+                    <button class="tool-btn" onclick="setTool('start')" id="btn-start">
+                        <span class="tool-icon" style="background: #d5f4e6; color: #27ae60;">●</span>
+                        开始 (Start)
+                    </button>
+                    <button class="tool-btn" onclick="setTool('end')" id="btn-end">
+                        <span class="tool-icon" style="background: #fadbd8; color: #e74c3c;">●</span>
+                        结束 (End)
+                    </button>
+                    <button class="tool-btn" onclick="setTool('process')" id="btn-process">
+                        <span class="tool-icon" style="background: #d6eaf8; color: #3498db;">▭</span>
+                        处理 (Process)
+                    </button>
+                    <button class="tool-btn" onclick="setTool('conditional')" id="btn-conditional">
+                        <span class="tool-icon" style="background: #fdebd0; color: #f39c12;">◆</span>
+                        条件 (Condition)
+                    </button>
+                </div>
+                
+                <div class="tool-section">
+                    <h3>Agent 专用</h3>
+                    <button class="tool-btn" onclick="setTool('agent')" id="btn-agent">
+                        <span class="tool-icon" style="background: #e8daef; color: #9b59b6;">🤖</span>
+                        Agent 循环
+                    </button>
+                    <button class="tool-btn" onclick="setTool('tool')" id="btn-tool">
+                        <span class="tool-icon" style="background: #f5cba7; color: #e67e22;">🔧</span>
+                        工具调用
+                    </button>
+                    <button class="tool-btn" onclick="setTool('human')" id="btn-human">
+                        <span class="tool-icon" style="background: #d1f2eb; color: #1abc9c;">👤</span>
+                        人工中断
+                    </button>
+                    <button class="tool-btn" onclick="setTool('parallel')" id="btn-parallel">
+                        <span class="tool-icon" style="background: #d5d8dc; color: #34495e;">⚡</span>
+                        并行网关
+                    </button>
+                </div>
+                
+                <div class="tool-section">
+                    <h3>工具</h3>
+                    <button class="tool-btn" onclick="setTool('edge')" id="btn-edge">
+                        <span class="tool-icon" style="background: #eaeded; color: #555;">→</span>
+                        连接边
+                    </button>
+                    <button class="tool-btn danger-btn" onclick="clearCanvas()">
+                        <span class="tool-icon" style="background: rgba(255,255,255,0.2);">🗑</span>
+                        清空画布
+                    </button>
+                </div>
+                
+                <div class="help-panel">
+                    <h4>💡 操作提示</h4>
+                    <div style="margin-bottom: 8px;">• <strong>双击 Agent 节点</strong>进入子图编辑</div>
+                    <div style="margin-bottom: 8px;">• <strong>拖拽</strong>移动节点</div>
+                    <div style="margin-bottom: 8px;">• <strong>Delete</strong>删除选中项</div>
+                    <div>• 右键点击边可删除</div>
+                </div>
+            </div>
+            
+            <!-- 画布 -->
+            <div class="canvas-wrapper">
+                <canvas id="canvas"></canvas>
+                <div class="canvas-hint" id="hint">点击添加节点</div>
+                <div class="subgraph-hint" id="subgraph-hint">
+                    当前在 Agent 子图中 · 点击面包屑返回上级
+                </div>
+            </div>
+            
+            <!-- 右侧面板 -->
+            <div class="properties">
+                <h3>⚙️ 节点属性</h3>
+                <div id="prop-content">
+                    <p style="color: #999; font-style: italic;">请选择一个节点进行编辑</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 代码生成模态框 -->
+    <div class="modal" id="code-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🎯 生成结果</h2>
+                <button class="download-btn" onclick="closeModal()" style="background: #7f8c8d;">关闭</button>
+            </div>
+            <div class="modal-body">
+                <div class="tabs">
+                    <button class="tab active" onclick="switchTab('python')">Python 代码</button>
+                    <button class="tab" onclick="switchTab('skills')">Skill 模板</button>
+                    <button class="tab" onclick="switchTab('graph')">图数据</button>
+                </div>
+                
+                <div id="tab-python" class="tab-content active">
+                    <div class="code-block">
+                        <pre id="python-code"></pre>
+                    </div>
+                    <button class="download-btn" onclick="downloadFile('workflow.py', 'python')">下载 workflow.py</button>
+                    <button class="download-btn" onclick="copyToClipboard('python')">复制到剪贴板</button>
+                </div>
+                
+                <div id="tab-skills" class="tab-content">
+                    <div id="skills-content"></div>
+                </div>
+                
+                <div id="tab-graph" class="tab-content">
+                    <div class="code-block">
+                        <pre id="graph-json"></pre>
+                    </div>
+                    <button class="download-btn" onclick="downloadFile('workflow.json', 'json')">下载 JSON</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==================== 全局状态管理 ====================
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // 工作流图数据（支持嵌套）
+        let workflowData = {
+            root: {
+                nodes: [],
+                edges: [],
+                idCounter: 0
+            }
+        };
+        
+        // 当前上下文
+        let currentPath = ['root']; // 面包屑路径
+        let currentGraph = workflowData.root; // 当前编辑的图
+        
+        // 交互状态
+        let selectedTool = null;
+        let selectedNode = null;
+        let selectedEdge = null;
+        let isDragging = false;
+        let dragOffset = {x: 0, y: 0};
+        let edgeStart = null;
+        let lastMousePos = {x: 0, y: 0};
+        
+        // 节点类型定义
+        const NODE_TYPES = {
+            start: { color: '#27ae60', label: 'Start', shape: 'circle' },
+            end: { color: '#e74c3c', label: 'End', shape: 'circle' },
+            process: { color: '#3498db', label: 'Process', shape: 'rect' },
+            conditional: { color: '#f39c12', label: 'Condition', shape: 'diamond' },
+            agent: { color: '#9b59b6', label: 'Agent', shape: 'double-rect', hasSubgraph: true },
+            tool: { color: '#e67e22', label: 'Tool', shape: 'cylinder' },
+            human: { color: '#1abc9c', label: 'Human', shape: 'octagon' },
+            parallel: { color: '#34495e', label: 'Parallel', shape: 'plus' }
+        };
+        
+        // ==================== 类定义 ====================
+        
+        class Node {
+            constructor(x, y, type, name, parentId = null) {
+                this.id = `node_${currentGraph.idCounter++}`;
+                this.x = x;
+                this.y = y;
+                this.type = type;
+                this.name = name || this.getDefaultName(type);
+                this.config = this.getDefaultConfig(type);
+                this.parentId = parentId; // 父Agent节点ID（如果在子图中）
+                
+                // 子图（仅Agent类型有）
+                if (NODE_TYPES[type].hasSubgraph) {
+                    this.subgraph = {
+                        nodes: [],
+                        edges: [],
+                        idCounter: 0
+                    };
+                }
+            }
+            
+            getDefaultName(type) {
+                const map = {
+                    'start': 'START',
+                    'end': 'END',
+                    'process': `process_${currentGraph.idCounter}`,
+                    'conditional': `decision_${currentGraph.idCounter}`,
+                    'agent': `agent_${currentGraph.idCounter}`,
+                    'tool': `tool_${currentGraph.idCounter}`,
+                    'human': `human_${currentGraph.idCounter}`,
+                    'parallel': `parallel_${currentGraph.idCounter}`
+                };
+                return map[type];
+            }
+            
+            getDefaultConfig(type) {
+                const configs = {
+                    agent: {
+                        model: 'gpt-4',
+                        max_iterations: 5,
+                        tools: [],
+                        system_prompt: ''
+                    },
+                    tool: {
+                        tool_name: '',
+                        timeout: 30,
+                        retry: 3
+                    },
+                    human: {
+                        timeout: 'infinite',
+                        prompt: '',
+                        options: []
+                    },
+                    parallel: {
+                        branches: 2,
+                        mode: 'all' // 'all' 或 'any'
+                    }
+                };
+                return configs[type] || {};
+            }
+            
+            draw() {
+                const typeConfig = NODE_TYPES[this.type];
+                ctx.save();
+                
+                // 根据形状绘制
+                switch(typeConfig.shape) {
+                    case 'circle':
+                        this.drawCircle(typeConfig.color);
+                        break;
+                    case 'rect':
+                        this.drawRect(typeConfig.color);
+                        break;
+                    case 'diamond':
+                        this.drawDiamond(typeConfig.color);
+                        break;
+                    case 'double-rect':
+                        this.drawDoubleRect(typeConfig.color);
+                        break;
+                    case 'cylinder':
+                        this.drawCylinder(typeConfig.color);
+                        break;
+                    case 'octagon':
+                        this.drawOctagon(typeConfig.color);
+                        break;
+                    case 'plus':
+                        this.drawPlus(typeConfig.color);
+                        break;
+                }
+                
+                // 绘制文字
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                // 换行处理
+                if (this.name.length > 12) {
+                    const parts = this.name.split('_');
+                    if (parts.length > 1) {
+                        ctx.fillText(parts[0], this.x, this.y - 7);
+                        ctx.fillText(parts.slice(1).join('_'), this.x, this.y + 7);
+                    } else {
+                        ctx.fillText(this.name.substring(0, 10) + '...', this.x, this.y);
+                    }
+                } else {
+                    ctx.fillText(this.name, this.x, this.y);
+                }
+                
+                // 子图标记（Agent节点）
+                if (typeConfig.hasSubgraph && this.subgraph) {
+                    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                    ctx.beginPath();
+                    ctx.arc(this.x + 35, this.y - 25, 8, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = 'white';
+                    ctx.font = '10px Arial';
+                    ctx.fillText('↗', this.x + 35, this.y - 25);
+                }
+                
+                // 选中标记
+                if (selectedNode === this) {
+                    ctx.strokeStyle = '#2c3e50';
+                    ctx.lineWidth = 3;
+                    ctx.stroke();
+                }
+                
+                ctx.restore();
+            }
+            
+            drawCircle(color) {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 30, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                ctx.fill();
+                ctx.strokeStyle = selectedNode === this ? '#2c3e50' : color;
+                ctx.lineWidth = selectedNode === this ? 3 : 2;
+                ctx.stroke();
+            }
+            
+            drawRect(color) {
+                this.roundRect(this.x - 50, this.y - 30, 100, 60, 8);
+                ctx.fillStyle = color;
+                ctx.fill();
+                ctx.strokeStyle = selectedNode === this ? '#2c3e50' : color;
+                ctx.lineWidth = selectedNode === this ? 3 : 2;
+                ctx.stroke();
+            }
+            
+            drawDiamond(color) {
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y - 35);
+                ctx.lineTo(this.x + 50, this.y);
+                ctx.lineTo(this.x, this.y + 35);
+                ctx.lineTo(this.x - 50, this.y);
+                ctx.closePath();
+                ctx.fillStyle = color;
+                ctx.fill();
+                ctx.strokeStyle = selectedNode === this ? '#2c3e50' : color;
+                ctx.lineWidth = selectedNode === this ? 3 : 2;
+                ctx.stroke();
+            }
+            
+            drawDoubleRect(color) {
+                // 外框
+                this.roundRect(this.x - 55, this.y - 35, 110, 70, 10);
+                ctx.fillStyle = color;
+                ctx.fill();
+                ctx.strokeStyle = selectedNode === this ? '#2c3e50' : color;
+                ctx.lineWidth = selectedNode === this ? 3 : 2;
+                ctx.stroke();
+                
+                // 内框（双边效果）
+                ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+                ctx.lineWidth = 2;
+                this.roundRect(this.x - 48, this.y - 28, 96, 56, 6);
+                ctx.stroke();
+            }
+            
+            drawCylinder(color) {
+                const w = 100, h = 60;
+                ctx.fillStyle = color;
+                
+                // 主体
+                ctx.beginPath();
+                ctx.moveTo(this.x - w/2, this.y - h/2 + 10);
+                ctx.lineTo(this.x - w/2, this.y + h/2 - 10);
+                ctx.bezierCurveTo(this.x - w/2, this.y + h/2, this.x + w/2, this.y + h/2, this.x + w/2, this.y + h/2 - 10);
+                ctx.lineTo(this.x + w/2, this.y - h/2 + 10);
+                ctx.bezierCurveTo(this.x + w/2, this.y - h/2, this.x - w/2, this.y - h/2, this.x - w/2, this.y - h/2 + 10);
+                ctx.fill();
+                
+                // 顶面
+                ctx.beginPath();
+                ctx.ellipse(this.x, this.y - h/2 + 10, w/2, 10, 0, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                ctx.fill();
+                
+                ctx.strokeStyle = selectedNode === this ? '#2c3e50' : color;
+                ctx.lineWidth = selectedNode === this ? 3 : 2;
+                ctx.stroke();
+            }
+            
+            drawOctagon(color) {
+                const r = 35;
+                ctx.beginPath();
+                for (let i = 0; i < 8; i++) {
+                    const angle = i * Math.PI / 4 - Math.PI / 8;
+                    const x = this.x + r * Math.cos(angle);
+                    const y = this.y + r * Math.sin(angle);
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.closePath();
+                ctx.fillStyle = color;
+                ctx.fill();
+                ctx.strokeStyle = selectedNode === this ? '#2c3e50' : color;
+                ctx.lineWidth = selectedNode === this ? 3 : 2;
+                ctx.stroke();
+            }
+            
+            drawPlus(color) {
+                const size = 40;
+                ctx.fillStyle = color;
+                
+                // 横条
+                ctx.fillRect(this.x - size, this.y - 12, size * 2, 24);
+                // 竖条
+                ctx.fillRect(this.x - 12, this.y - size, 24, size * 2);
+                
+                ctx.strokeStyle = selectedNode === this ? '#2c3e50' : color;
+                ctx.lineWidth = selectedNode === this ? 3 : 2;
+                ctx.strokeRect(this.x - size, this.y - 12, size * 2, 24);
+                ctx.strokeRect(this.x - 12, this.y - size, 24, size * 2);
+            }
+            
+            roundRect(x, y, w, h, r) {
+                if (ctx.roundRect) {
+                    ctx.beginPath();
+                    ctx.roundRect(x, y, w, h, r);
+                } else {
+                    ctx.beginPath();
+                    ctx.moveTo(x + r, y);
+                    ctx.lineTo(x + w - r, y);
+                    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+                    ctx.lineTo(x + w, y + h - r);
+                    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+                    ctx.lineTo(x + r, y + h);
+                    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+                    ctx.lineTo(x, y + r);
+                    ctx.quadraticCurveTo(x, y, x + r, y);
+                    ctx.closePath();
+                }
+            }
+            
+            contains(x, y) {
+                // 简化为矩形检测
+                const hitSize = this.type === 'circle' ? 30 : 
+                               this.type === 'diamond' ? 35 : 
+                               this.type === 'octagon' ? 35 :
+                               this.type === 'plus' ? 40 : 30;
+                return x >= this.x - hitSize && x <= this.x + hitSize &&
+                       y >= this.y - hitSize && y <= this.y + hitSize;
+            }
+        }
+        
+        class Edge {
+            constructor(from, to, label = '') {
+                this.id = `edge_${Date.now()}_${Math.random()}`;
+                this.from = from;
+                this.to = to;
+                this.label = label;
+            }
+            
+            draw() {
+                const start = this.getEdgePoint(this.from, this.to);
+                const end = this.getEdgePoint(this.to, this.from);
+                
+                ctx.save();
+                
+                // 绘制线
+                ctx.beginPath();
+                ctx.moveTo(start.x, start.y);
+                
+                // 检查是否有反向边（绘制曲线避免重叠）
+                const hasReverse = currentGraph.edges.some(e => 
+                    e !== this && e.from === this.to && e.to === this.from
+                );
+                
+                if (hasReverse) {
+                    const midX = (start.x + end.x) / 2;
+                    const midY = (start.y + end.y) / 2;
+                    const angle = Math.atan2(end.y - start.y, end.x - start.x);
+                    const perp = angle + Math.PI / 2;
+                    ctx.quadraticCurveTo(
+                        midX + Math.cos(perp) * 30,
+                        midY + Math.sin(perp) * 30,
+                        end.x, end.y
+                    );
+                } else {
+                    ctx.lineTo(end.x, end.y);
+                }
+                
+                ctx.strokeStyle = selectedEdge === this ? '#e74c3c' : '#34495e';
+                ctx.lineWidth = selectedEdge === this ? 3 : 2;
+                ctx.stroke();
+                
+                // 箭头
+                const angle = Math.atan2(end.y - start.y, end.x - start.x);
+                const arrowLen = 10;
+                ctx.beginPath();
+                ctx.moveTo(end.x, end.y);
+                ctx.lineTo(
+                    end.x - arrowLen * Math.cos(angle - Math.PI/6),
+                    end.y - arrowLen * Math.sin(angle - Math.PI/6)
+                );
+                ctx.moveTo(end.x, end.y);
+                ctx.lineTo(
+                    end.x - arrowLen * Math.cos(angle + Math.PI/6),
+                    end.y - arrowLen * Math.sin(angle + Math.PI/6)
+                );
+                ctx.stroke();
+                
+                // 标签
+                if (this.label) {
+                    const midX = (start.x + end.x) / 2;
+                    const midY = (start.y + end.y) / 2;
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(midX - 15, midY - 10, 30, 20);
+                    ctx.fillStyle = '#2c3e50';
+                    ctx.font = 'bold 11px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(this.label, midX, midY);
+                }
+                
+                ctx.restore();
+            }
+            
+            getEdgePoint(fromNode, toNode) {
+                const dx = toNode.x - fromNode.x;
+                const dy = toNode.y - fromNode.y;
+                const angle = Math.atan2(dy, dx);
+                const r = 30; // 简化为统一半径
+                
+                if (fromNode.type === 'diamond') {
+                    const absAngle = Math.abs(angle);
+                    if (absAngle < Math.PI/4) return {x: fromNode.x + 50, y: fromNode.y};
+                    if (absAngle > 3*Math.PI/4) return {x: fromNode.x - 50, y: fromNode.y};
+                    if (angle > 0) return {x: fromNode.x, y: fromNode.y + 35};
+                    return {x: fromNode.x, y: fromNode.y - 35};
+                }
+                
+                return {
+                    x: fromNode.x + r * Math.cos(angle),
+                    y: fromNode.y + r * Math.sin(angle)
+                };
+            }
+            
+            contains(x, y) {
+                const start = this.getEdgePoint(this.from, this.to);
+                const end = this.getEdgePoint(this.to, this.from);
+                return this.pointToLineDistance(x, y, start.x, start.y, end.x, end.y) < 8;
+            }
+            
+            pointToLineDistance(px, py, x1, y1, x2, y2) {
+                const A = px - x1, B = py - y1, C = x2 - x1, D = y2 - y1;
+                const dot = A * C + B * D;
+                const lenSq = C * C + D * D;
+                let param = lenSq !== 0 ? dot / lenSq : -1;
+                let xx, yy;
+                if (param < 0) { xx = x1; yy = y1; }
+                else if (param > 1) { xx = x2; yy = y2; }
+                else { xx = x1 + param * C; yy = y1 + param * D; }
+                return Math.sqrt((px - xx)**2 + (py - yy)**2);
+            }
+        }
+        
+        // ==================== 画布操作 ====================
+        
+        function resizeCanvas() {
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+            draw();
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+        
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 网格
+            ctx.save();
+            ctx.strokeStyle = '#e0e0e0';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < canvas.width; x += 20) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+            }
+            for (let y = 0; y < canvas.height; y += 20) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+            }
+            ctx.restore();
+            
+            // 边
+            currentGraph.edges.forEach(edge => edge.draw());
+            
+            // 节点
+            currentGraph.nodes.forEach(node => node.draw());
+            
+            // 临时连线
+            if (selectedTool === 'edge' && edgeStart) {
+                const rect = canvas.getBoundingClientRect();
+                const end = {x: lastMousePos.x - rect.left, y: lastMousePos.y - rect.top};
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(edgeStart.x, edgeStart.y);
+                ctx.lineTo(end.x, end.y);
+                ctx.strokeStyle = '#95a5a6';
+                ctx.setLineDash([5, 5]);
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+        
+        // ==================== 交互逻辑 ====================
+        
+        function setTool(tool) {
+            selectedTool = tool;
+            document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+            const btn = document.getElementById(`btn-${tool}`);
+            if (btn) btn.classList.add('active');
+            
+            const hints = {
+                start: '点击画布添加开始节点',
+                end: '点击画布添加结束节点',
+                process: '点击画布添加处理节点',
+                conditional: '点击画布添加条件节点',
+                agent: '点击画布添加Agent节点（可双击进入编辑）',
+                tool: '点击画布添加工具调用节点',
+                human: '点击画布添加人工中断节点',
+                parallel: '点击画布添加并行网关',
+                edge: '依次点击两个节点进行连接'
+            };
+            
+            const hint = document.getElementById('hint');
+            hint.textContent = hints[tool] || '';
+            hint.classList.add('show');
+            setTimeout(() => hint.classList.remove('show'), 2000);
+        }
+        
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            if (selectedTool === 'edge') {
+                const node = currentGraph.nodes.find(n => n.contains(x, y));
+                if (node) {
+                    if (!edgeStart) {
+                        edgeStart = node;
+                    } else if (edgeStart !== node) {
+                        const label = (edgeStart.type === 'conditional' || edgeStart.type === 'agent') ? 
+                            prompt('输入条件标签 (如: continue/finish):', 'continue') || '' : '';
+                        currentGraph.edges.push(new Edge(edgeStart, node, label));
+                        edgeStart = null;
+                        draw();
+                    }
+                }
+            } else if (selectedTool && NODE_TYPES[selectedTool]) {
+                const node = new Node(x, y, selectedTool, null, 
+                    currentPath.length > 1 ? currentPath[currentPath.length - 1] : null);
+                currentGraph.nodes.push(node);
+                selectedNode = node;
+                updateProperties();
+                draw();
+            } else {
+                // 选择或拖拽
+                const node = currentGraph.nodes.find(n => n.contains(x, y));
+                if (node) {
+                    selectedNode = node;
+                    selectedEdge = null;
+                    isDragging = true;
+                    dragOffset = {x: x - node.x, y: y - node.y};
+                    updateProperties();
+                    draw();
+                } else {
+                    const edge = currentGraph.edges.find(e => e.contains(x, y));
+                    if (edge) {
+                        selectedEdge = edge;
+                        selectedNode = null;
+                        updateProperties();
+                        draw();
+                    } else {
+                        selectedNode = null;
+                        selectedEdge = null;
+                        updateProperties();
+                        draw();
+                    }
+                }
+            }
+        });
+        
+        canvas.addEventListener('mousemove', (e) => {
+            lastMousePos = {x: e.clientX, y: e.clientY};
+            if (isDragging && selectedNode) {
+                const rect = canvas.getBoundingClientRect();
+                selectedNode.x = e.clientX - rect.left - dragOffset.x;
+                selectedNode.y = e.clientY - rect.top - dragOffset.y;
+                draw();
+            } else if (selectedTool === 'edge' && edgeStart) {
+                draw();
+            }
+        });
+        
+        canvas.addEventListener('mouseup', () => { isDragging = false; });
+        
+        canvas.addEventListener('dblclick', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            const node = currentGraph.nodes.find(n => n.contains(x, y));
+            if (node && node.type === 'agent' && node.subgraph) {
+                enterSubgraph(node);
+            } else if (node) {
+                const newName = prompt('重命名节点:', node.name);
+                if (newName) {
+                    node.name = newName;
+                    draw();
+                    updateProperties();
+                }
+            }
+        });
+        
+        canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            const edge = currentGraph.edges.find(e => e.contains(x, y));
+            if (edge && confirm('删除这条连接?')) {
+                currentGraph.edges = currentGraph.edges.filter(e => e !== edge);
+                selectedEdge = null;
+                draw();
+                updateProperties();
+            }
+        });
+        
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                if (selectedNode) {
+                    if (confirm('删除这个节点及其连接?')) {
+                        currentGraph.edges = currentGraph.edges.filter(
+                            e => e.from !== selectedNode && e.to !== selectedNode
+                        );
+                        currentGraph.nodes = currentGraph.nodes.filter(n => n !== selectedNode);
+                        selectedNode = null;
+                        draw();
+                        updateProperties();
+                    }
+                } else if (selectedEdge) {
+                    currentGraph.edges = currentGraph.edges.filter(e => e !== selectedEdge);
+                    selectedEdge = null;
+                    draw();
+                    updateProperties();
+                }
+            }
+        });
+        
+        // ==================== 子图导航 ====================
+        
+        function enterSubgraph(agentNode) {
+            currentPath.push(agentNode.id);
+            currentGraph = agentNode.subgraph;
+            updateBreadcrumb();
+            selectedNode = null;
+            selectedEdge = null;
+            document.getElementById('subgraph-hint').classList.add('show');
+            draw();
+            updateProperties();
+        }
+        
+        function navigateTo(index) {
+            if (index === 0) {
+                currentPath = ['root'];
+                currentGraph = workflowData.root;
+            } else {
+                // 重建路径
+                const newPath = currentPath.slice(0, index + 1);
+                let graph = workflowData.root;
+                for (let i = 1; i < newPath.length; i++) {
+                    const nodeId = newPath[i];
+                    const node = graph.nodes.find(n => n.id === nodeId);
+                    if (node && node.subgraph) {
+                        graph = node.subgraph;
+                    }
+                }
+                currentPath = newPath;
+                currentGraph = graph;
+            }
+            updateBreadcrumb();
+            document.getElementById('subgraph-hint').classList.toggle('show', currentPath.length > 1);
+            draw();
+            updateProperties();
+        }
+        
+        function navigateToRoot() { navigateTo(0); }
+        
+        function updateBreadcrumb() {
+            const container = document.getElementById('breadcrumb');
+            container.innerHTML = '';
+            
+            currentPath.forEach((id, index) => {
+                const span = document.createElement('span');
+                span.className = 'breadcrumb-item' + (index === currentPath.length - 1 ? ' active' : '');
+                span.textContent = index === 0 ? '主工作流' : 
+                    (workflowData.root.nodes.find(n => n.id === id)?.name || id);
+                span.onclick = () => navigateTo(index);
+                container.appendChild(span);
+                
+                if (index < currentPath.length - 1) {
+                    const sep = document.createElement('span');
+                    sep.className = 'breadcrumb-separator';
+                    sep.textContent = '›';
+                    container.appendChild(sep);
+                }
+            });
+        }
+        
+        // ==================== 属性面板 ====================
+        
+        function updateProperties() {
+            const panel = document.getElementById('prop-content');
+            
+            if (selectedNode) {
+                const type = NODE_TYPES[selectedNode.type];
+                let configHtml = '';
+                
+                // 根据类型显示配置
+                if (selectedNode.type === 'agent') {
+                    configHtml = `
+                        <div class="prop-group">
+                            <label>模型</label>
+                            <input type="text" id="config-model" value="${selectedNode.config.model}" 
+                                   onchange="updateNodeConfig('model', this.value)">
+                        </div>
+                        <div class="prop-group">
+                            <label>最大迭代次数</label>
+                            <input type="number" id="config-iter" value="${selectedNode.config.max_iterations}" 
+                                   onchange="updateNodeConfig('max_iterations', parseInt(this.value))">
+                        </div>
+                        <div class="prop-group">
+                            <label>系统提示词</label>
+                            <textarea id="config-prompt" onchange="updateNodeConfig('system_prompt', this.value)"
+                                    >${selectedNode.config.system_prompt}</textarea>
+                        </div>
+                        <div class="prop-group">
+                            <label>工具列表 (逗号分隔)</label>
+                            <input type="text" id="config-tools" value="${selectedNode.config.tools.join(',')}" 
+                                   onchange="updateNodeConfig('tools', this.value.split(',').filter(s=>s))">
+                        </div>
+                        <div class="prop-group" style="background: #e8daef; padding: 10px; border-radius: 4px;">
+                            <strong>💡 提示：</strong>双击此节点进入子图编辑，定义Agent内部循环逻辑
+                        </div>
+                    `;
+                } else if (selectedNode.type === 'tool') {
+                    configHtml = `
+                        <div class="prop-group">
+                            <label>工具名称</label>
+                            <input type="text" id="config-tool" value="${selectedNode.config.tool_name}" 
+                                   placeholder="如: web_search" onchange="updateNodeConfig('tool_name', this.value)">
+                        </div>
+                        <div class="prop-group">
+                            <label>超时时间(秒)</label>
+                            <input type="number" id="config-timeout" value="${selectedNode.config.timeout}" 
+                                   onchange="updateNodeConfig('timeout', parseInt(this.value))">
+                        </div>
+                        <div class="prop-group">
+                            <label>重试次数</label>
+                            <input type="number" id="config-retry" value="${selectedNode.config.retry}" 
+                                   onchange="updateNodeConfig('retry', parseInt(this.value))">
+                        </div>
+                    `;
+                } else if (selectedNode.type === 'human') {
+                    configHtml = `
+                        <div class="prop-group">
+                            <label>询问提示词</label>
+                            <textarea id="config-prompt" onchange="updateNodeConfig('prompt', this.value)"
+                                    >${selectedNode.config.prompt}</textarea>
+                        </div>
+                        <div class="prop-group">
+                            <label>选项 (逗号分隔，留空为开放式)</label>
+                            <input type="text" id="config-options" value="${selectedNode.config.options.join(',')}" 
+                                   onchange="updateNodeConfig('options', this.value.split(',').filter(s=>s))">
+                        </div>
+                    `;
+                } else if (selectedNode.type === 'parallel') {
+                    configHtml = `
+                        <div class="prop-group">
+                            <label>分支数量</label>
+                            <input type="number" id="config-branches" value="${selectedNode.config.branches}" 
+                                   min="2" max="10" onchange="updateNodeConfig('branches', parseInt(this.value))">
+                        </div>
+                        <div class="prop-group">
+                            <label>等待模式</label>
+                            <select id="config-mode" onchange="updateNodeConfig('mode', this.value)">
+                                <option value="all" ${selectedNode.config.mode === 'all' ? 'selected' : ''}>等待全部完成 (AND)</option>
+                                <option value="any" ${selectedNode.config.mode === 'any' ? 'selected' : ''}>任一完成即可 (OR)</option>
+                            </select>
+                        </div>
+                    `;
+                }
+                
+                panel.innerHTML = `
+                    <div class="prop-group">
+                        <label>节点 ID</label>
+                        <input type="text" value="${selectedNode.id}" disabled>
+                    </div>
+                    <div class="prop-group">
+                        <label>名称</label>
+                        <input type="text" value="${selectedNode.name}" onchange="updateNodeName(this.value)">
+                    </div>
+                    <div class="prop-group">
+                        <label>类型</label>
+                        <input type="text" value="${type.label}" disabled>
+                    </div>
+                    ${configHtml}
+                    <div class="prop-group">
+                        <button class="tool-btn danger-btn" onclick="deleteSelectedNode()" style="width: 100%;">
+                            删除节点
+                        </button>
+                    </div>
+                `;
+            } else if (selectedEdge) {
+                panel.innerHTML = `
+                    <div class="prop-group">
+                        <label>起点</label>
+                        <input type="text" value="${selectedEdge.from.name}" disabled>
+                    </div>
+                    <div class="prop-group">
+                        <label>终点</label>
+                        <input type="text" value="${selectedEdge.to.name}" disabled>
+                    </div>
+                    <div class="prop-group">
+                        <label>条件标签</label>
+                        <input type="text" value="${selectedEdge.label}" 
+                               onchange="updateEdgeLabel(this.value)">
+                    </div>
+                    <div class="prop-group">
+                        <button class="tool-btn danger-btn" onclick="deleteSelectedEdge()" style="width: 100%;">
+                            删除连接
+                        </button>
+                    </div>
+                `;
+            } else {
+                panel.innerHTML = `
+                    <p style="color: #999; margin-bottom: 20px;">请选择一个节点或边进行编辑</p>
+                    <div class="help-panel">
+                        <h4>节点类型说明</h4>
+                        <div class="node-legend">
+                            <div class="legend-shape" style="background: #9b59b6; border-radius: 4px;"></div>
+                            <span><strong>Agent：</strong>包含子图的智能体，支持ReAct循环</span>
+                        </div>
+                        <div class="node-legend">
+                            <div class="legend-shape" style="background: #e67e22; border-radius: 50% 50% 0 0/20% 20% 0 0; border: 2px solid #e67e22;"></div>
+                            <span><strong>Tool：</strong>外部工具调用（可配置超时/重试）</span>
+                        </div>
+                        <div class="node-legend">
+                            <div class="legend-shape" style="background: #1abc9c; clip-path: polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%);"></div>
+                            <span><strong>Human：</strong>人工介入点（中断等待用户输入）</span>
+                        </div>
+                        <div class="node-legend">
+                            <div class="legend-shape" style="background: #34495e;"></div>
+                            <span><strong>Parallel：</strong>并行执行多个分支</span>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+        
+        function updateNodeName(val) { if (selectedNode) { selectedNode.name = val; draw(); } }
+        function updateNodeConfig(key, val) { if (selectedNode) { selectedNode.config[key] = val; } }
+        function updateEdgeLabel(val) { if (selectedEdge) { selectedEdge.label = val; draw(); } }
+        function deleteSelectedNode() {
+            if (selectedNode) {
+                currentGraph.edges = currentGraph.edges.filter(e => e.from !== selectedNode && e.to !== selectedNode);
+                currentGraph.nodes = currentGraph.nodes.filter(n => n !== selectedNode);
+                selectedNode = null;
+                draw();
+                updateProperties();
+            }
+        }
+        function deleteSelectedEdge() {
+            if (selectedEdge) {
+                currentGraph.edges = currentGraph.edges.filter(e => e !== selectedEdge);
+                selectedEdge = null;
+                draw();
+                updateProperties();
+            }
+        }
+        
+        function clearCanvas() {
+            if (confirm('确定清空当前画布的所有内容?')) {
+                currentGraph.nodes = [];
+                currentGraph.edges = [];
+                currentGraph.idCounter = 0;
+                selectedNode = null;
+                selectedEdge = null;
+                draw();
+                updateProperties();
+            }
+        }
+        
+        // ==================== 代码生成 ====================
+        
+        function generateCode() {
+            const pythonCode = generateGraphCode(workflowData.root, 'main');
+            
+            // 收集所有skills
+            const skills = [];
+            function collectSkills(graph) {
+                graph.nodes.forEach(node => {
+                    if (node.type === 'agent' && node.config.system_prompt) {
+                        skills.push({
+                            name: `${node.name}_skill.md`,
+                            content: `# ${node.name} Skill
+
+## 角色
+${node.config.system_prompt || '你是一个智能助手'}
+
+## 可用工具
+${node.config.tools.join(', ') || '无'}
+
+## 任务
+根据输入状态进行处理，返回动作决定。
+
+## 输出格式
+\`\`\`json
+{
+  "thought": "思考过程",
+  "action": "工具名或finish",
+  "input": "工具输入"
+}
+\`\`\``
+                        });
+                    }
+                    if (node.subgraph) collectSkills(node.subgraph);
+                });
+            }
+            collectSkills(workflowData.root);
+            
+            // 显示
+            document.getElementById('python-code').textContent = pythonCode;
+            
+            const skillsDiv = document.getElementById('skills-content');
+            skillsDiv.innerHTML = skills.map(s => `
+                <div class="code-block">
+                    <h4>${s.name}</h4>
+                    <pre>${s.content}</pre>
+                </div>
+            `).join('');
+            
+            document.getElementById('graph-json').textContent = JSON.stringify(workflowData, null, 2);
+            document.getElementById('code-modal').classList.add('show');
+        }
+        
+        function generateGraphCode(graph, name, isSubgraph = false) {
+            let code = isSubgraph ? '' : `import asyncio
+from typing import Literal, Optional, Dict, Any, List
+from langgraph.graph import StateGraph, END
+from dataclasses import dataclass, field
+
+@dataclass
+class State:
+    messages: List[Dict] = field(default_factory=list)
+    next: Optional[str] = None
+`;
+            
+            // 生成子图编译函数
+            code += `
+def build_${name}_graph():
+    workflow = StateGraph(State)
+`;
+            
+            // 添加节点
+            graph.nodes.forEach(node => {
+                if (node.type === 'start' || node.type === 'end') return;
+                
+                if (node.type === 'agent') {
+                    code += `
+    # Agent节点: ${node.name} (包含子图)
+    def ${node.name}_node(state):
+        # 进入Agent子图执行
+        subapp = build_${node.name}_subgraph()
+        result = subapp.invoke(state)
+        return result
+    
+    workflow.add_node("${node.name}", ${node.name}_node)
+`;
+                    // 递归生成子图代码（放在后面）
+                } else if (node.type === 'tool') {
+                    code += `
+    # 工具节点: ${node.name}
+    def ${node.name}_node(state):
+        print(f"🔧 执行工具: ${node.config.tool_name || node.name}")
+        # TODO: 实现 ${node.config.tool_name || '工具'}
+        return {"messages": [{"role": "tool", "content": "result"}]}
+    
+    workflow.add_node("${node.name}", ${node.name}_node)
+`;
+                } else if (node.type === 'human') {
+                    code += `
+    # 人工中断节点: ${node.name}
+    def ${node.name}_node(state):
+        print(f"👤 等待人工输入: ${node.config.prompt || ''}")
+        # 实际应使用 interrupt 机制
+        return {"messages": [{"role": "human", "content": "user_input"}]}
+    
+    workflow.add_node("${node.name}", ${node.name}_node)
+`;
+                } else if (node.type === 'parallel') {
+                    code += `
+    # 并行网关: ${node.name}
+    def ${node.name}_node(state):
+        # ${node.config.mode === 'all' ? '等待全部完成' : '任一完成即可'}
+        return state
+    
+    workflow.add_node("${node.name}", ${node.name}_node)
+`;
+                } else {
+                    code += `
+    # 处理节点: ${node.name}
+    def ${node.name}_node(state):
+        print(f"▶️ 执行: ${node.name}")
+        return {"messages": [{"role": "assistant", "content": "processed"}]}
+    
+    workflow.add_node("${node.name}", ${node.name}_node)
+`;
+                }
+            });
+            
+            // 添加边
+            graph.edges.forEach(edge => {
+                if (edge.from.type === 'conditional' || edge.from.type === 'agent') {
+                    // 条件边在router中处理，这里只添加普通边
+                    code += `    # 条件分支: ${edge.label}\n`;
+                } else {
+                    code += `    workflow.add_edge("${edge.from.name}", "${edge.to.name}")
+`;
+                }
+            });
+            
+            // 添加条件路由
+            const conditionalNodes = graph.nodes.filter(n => n.type === 'conditional' || n.type === 'agent');
+            conditionalNodes.forEach(node => {
+                const outEdges = graph.edges.filter(e => e.from === node);
+                if (outEdges.length > 0) {
+                    code += `
+    def ${node.name}_router(state) -> Literal[${outEdges.map(e => `"${e.to.name}"`).join(', ')}]:
+        # 根据状态决定路由
+        return "${outEdges[0].to.name}"  # TODO: 实现路由逻辑
+    
+    workflow.add_conditional_edges(
+        "${node.name}",
+        ${node.name}_router,
+        {${outEdges.map(e => `"${e.to.name}": "${e.to.name}"`).join(', ')}}
+    )
+`;
+                }
+            });
+            
+            // 设置入口
+            const startNode = graph.nodes.find(n => n.type === 'start');
+            if (startNode) {
+                const firstEdge = graph.edges.find(e => e.from === startNode);
+                if (firstEdge) {
+                    code += `    workflow.set_entry_point("${firstEdge.to.name}")
+`;
+                }
+            }
+            
+            code += `    return workflow.compile()
+`;
+            
+            // 递归生成Agent子图
+            graph.nodes.forEach(node => {
+                if (node.type === 'agent' && node.subgraph) {
+                    code += `
+# ${node.name} 的子图定义
+${generateGraphCode(node.subgraph, node.name + '_subgraph', true)}
+`;
+                }
+            });
+            
+            if (!isSubgraph) {
+                code += `
+if __name__ == "__main__":
+    app = build_${name}_graph()
+    result = app.invoke({"messages": []})
+    print(result)
+`;
+            }
+            
+            return code;
+        }
+        
+        // ==================== 导入导出 ====================
+        
+        function exportGraph() {
+            const dataStr = JSON.stringify(workflowData, null, 2);
+            const blob = new Blob([dataStr], {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `agent_workflow_${Date.now()}.json`;
+            a.click();
+        }
+        
+        function importGraph(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    // 递归重建节点和边
+                    function rebuildGraph(g) {
+                        const newGraph = {nodes: [], edges: [], idCounter: g.idCounter || 0};
+                        const nodeMap = {};
+                        
+                        g.nodes.forEach(n => {
+                            const node = new Node(n.x, n.y, n.type, n.name, n.parentId);
+                            node.id = n.id;
+                            node.config = n.config || {};
+                            if (n.subgraph) {
+                                node.subgraph = rebuildGraph(n.subgraph);
+                            }
+                            newGraph.nodes.push(node);
+                            nodeMap[n.id] = node;
+                        });
+                        
+                        g.edges.forEach(e => {
+                            const from = nodeMap[e.from];
+                            const to = nodeMap[e.to];
+                            if (from && to) {
+                                newGraph.edges.push(new Edge(from, to, e.label));
+                            }
+                        });
+                        
+                        return newGraph;
+                    }
+                    
+                    workflowData = {root: rebuildGraph(data.root)};
+                    currentPath = ['root'];
+                    currentGraph = workflowData.root;
+                    updateBreadcrumb();
+                    draw();
+                    alert('导入成功！');
+                } catch (err) {
+                    alert('导入失败: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+        
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById(`tab-${tab}`).classList.add('active');
+        }
+        
+        function closeModal() {
+            document.getElementById('code-modal').classList.remove('show');
+        }
+        
+        function downloadFile(filename, type) {
+            const content = type === 'python' ? 
+                document.getElementById('python-code').textContent :
+                document.getElementById('graph-json').textContent;
+            const blob = new Blob([content], {type: 'text/plain'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+        }
+        
+        function copyToClipboard(type) {
+            const text = document.getElementById('python-code').textContent;
+            navigator.clipboard.writeText(text).then(() => alert('已复制！'));
+        }
+        
+        // 初始化
+        updateBreadcrumb();
+        draw();
+    </script>
+</body>
+</html>
