@@ -172,7 +172,7 @@ class RewriteSkill(BaseSkill):
             rewritten = res.get("step5_rewritten_query", query)
             entities = res.get("step2_entities", [])
             intent = res.get("step1_intent", {})
-
+            print(f"   ✅ [Rewriter 完成] 改写为: {rewritten}")
             # 返回 Observation
             return Observation(
                 success=True,
