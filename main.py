@@ -3,88 +3,109 @@ import os
 import sys
 import json
 import config
+
 # 1. 确保能导入 agents 目录
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# 2. 导入可学习 Leader 的核心组件
-# 假设你把上一段代码保存为了 agents/learnable_leader.py
+# 2. 导入组件
 from agents.leader import (
-    OpenAILLM, 
-    LLMPolicy, 
+    OpenAILLM,
+    LLMPolicy,
     LearnableLeaderAgent,
     ActionType
 )
 
 # ==================== 配置区域 ====================
-# 这里填入你的大模型 API 配置
-# 建议先用 DeepSeek-V3 或 GPT-4o 这种强逻辑模型来测试效果
-API_KEY = config.LLM_API_KEY      # 引用 config 里的 DeepSeek Key
-BASE_URL = config.LLM_BASE_URL    # 引用 config 里的 Base URL
-MODEL_NAME = config.LLM_MODEL_NAME # 引用 config 里的模型名称
+API_KEY = config.LLM_API_KEY
+BASE_URL = config.LLM_BASE_URL
+MODEL_NAME = config.LLM_MODEL_NAME
 
-# 如果你想测试 Qwen (通过兼容接口):
-# BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-# MODEL_NAME = "qwen-plus" 
+
 # ================================================
 
 async def main():
     print(f"🚀 初始化 Model-Driven Agent (基于 {MODEL_NAME})...\n")
 
-    # 1. 实例化 LLM 客户端
-    # 这个类会自动处理 JSON Mode，保证模型输出能被程序解析
+    # 1. 实例化核心组件
     llm = OpenAILLM(api_key=API_KEY, base_url=BASE_URL, model_name=MODEL_NAME)
-
-    # 2. 实例化策略 (Policy)
-    # temperature=0.1 很重要！让模型决策更稳定，不做随机尝试
     policy = LLMPolicy(llm)
-
-    # 3. 实例化 Agent
-    # max_steps=15: 防止模型陷入死循环
     agent = LearnableLeaderAgent(policy, max_steps=15)
 
-    # 4. 准备测试问题
-    # 找一个稍微复杂、需要多步操作的问题，才能看出模型“执行代码”的能力
-    test_query = "分析一下贵州茅台2023年的营收情况，并帮我计算一下如果2024年增长15%是多少。"
-    
-    print(f"👤 用户问题: {test_query}")
-    print("-" * 60)
+    # 2. 获取初始问题
+    print("请输入您的问题（直接回车使用默认测试问题）：")
+    user_input = input("> ").strip()
+    if user_input == "":
+        user_input = "公司23年营收？"  # 默认测试问题
+        print(f"检测到直接回车，已使用默认问题：{user_input}")
 
-    # 5. 开始执行
-    # 这里会进入 While 循环，模型每一步都会自己决定调用哪个函数
-    try:
-        result = await agent.process(test_query)
+    current_query = user_input
 
-        # 6. 输出结果分析
-        print("\n" + "=" * 60)
-        print(f"✅ 任务完成！总步数: {len(result['trajectory'])}")
-        print(f"💰 获得奖励 (Reward): {result['total_reward']:.2f}")
-        print("-" * 60)
-        print(f"📄 最终报告:\n{result['final_report']}")
-        print("=" * 60)
+    # ==================== 🔥 核心修改区域开始 🔥 ====================
+    # 使用 while 循环来支持多轮对话（追问机制）
 
-        # 7. 打印思维链 (SFT 数据的核心)
-        print("\n🧠 模型决策轨迹 (思维链):")
-        for i, step in enumerate(result['trajectory']):
-            action = step['action']
-            obs = step.get('observation', {}) # 如果你修改了代码结构，注意这里
-            
-            # 打印格式：步骤 - [动作类型] - 理由
-            print(f"\n[Step {i+1}] 🤖 动作: {action.type.value}")
-            print(f"         🤔 思考: {action.reason}")
-            print(f"         🛠️ 参数: {json.dumps(action.parameters, ensure_ascii=False)}")
-            
-            # 如果有 Reward 信息
-            reward = step.get('reward', 0)
-            print(f"         🏆 奖励: {reward}")
+    while True:
+        print(f"\n🎬 [System] 正在处理任务: {current_query}")
+        print("-" * 30)
 
-    except Exception as e:
-        print(f"\n❌ 运行出错: {e}")
-        import traceback
-        traceback.print_exc()
+        try:
+            # 执行 Agent 流程
+            result = await agent.process(current_query)
+
+            # --- 分支 A: Agent 请求追问 (Need Input) ---
+            if result.get("status") == "need_input":
+                question = result.get("clarification_question")
+                options = result.get("clarification_options")
+
+                print(f"\n🤖 [Agent 追问]: {question}")
+                if options:
+                    print(f"   (参考选项: {options})")
+
+                # 获取用户补充信息
+                print("\n" + "-" * 30)
+                supplement = input("👤 [请输入您的回答] (输入 'q' 退出): ").strip()
+
+                if supplement.lower() == 'q':
+                    print("用户取消任务。")
+                    break
+
+                # 简单策略：将补充信息拼接到原问题后面
+                # 例如： "公司23年营收？" + " " + "贵州茅台"
+                current_query = f"{current_query} {supplement}"
+                print(f"🔄 [System] 信息已更新，重新规划任务...")
+                continue  # 跳过本次循环剩下的代码，带入新 query 重新 process
+
+            # --- 分支 B: 任务完成 (Success) ---
+            else:
+                # 输出结果分析
+                print("\n" + "=" * 60)
+                print(f"✅ 任务完成！总步数: {len(result.get('trajectory', []))}")
+                print(f"💰 获得奖励 (Reward): {result.get('total_reward', 0):.2f}")
+                print("-" * 60)
+                print(f"📄 最终报告:\n{result.get('final_report', '无报告')}")
+                print("=" * 60)
+
+                # 打印思维链
+                print("\n🧠 模型决策轨迹 (思维链):")
+                for i, step in enumerate(result.get('trajectory', [])):
+                    action = step['action']
+
+                    print(f"\n[Step {i + 1}] 🤖 动作: {action.type.value}")
+                    print(f"         🤔 思考: {action.reason}")
+                    print(f"         🛠️ 参数: {json.dumps(action.parameters, ensure_ascii=False)}")
+
+                break  # 任务真正完成，退出 while 循环
+
+        except Exception as e:
+            print(f"\n❌ 运行出错: {e}")
+            import traceback
+            traceback.print_exc()
+            break
+
+    # ==================== 🔥 核心修改区域结束 🔥 ====================
+
 
 if __name__ == "__main__":
-    # Windows 环境下的事件循环策略
     if os.name == 'nt':
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    
+
     asyncio.run(main())
